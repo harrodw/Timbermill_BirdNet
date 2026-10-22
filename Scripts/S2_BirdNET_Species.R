@@ -192,7 +192,7 @@ pred_birds
 pred_birds$label
 
 # List of possible birds 
-psb_bird_codes <- taxonomic_bird_list <- c(
+psb_bird_codes <- c(
     "Colinus virginianus_Northern Bobwhite",
     # "Meleagris gallopavo_Wild Turkey",
     # "Branta canadensis_Canada Goose",

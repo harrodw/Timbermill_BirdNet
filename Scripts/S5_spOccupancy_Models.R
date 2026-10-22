@@ -17,10 +17,7 @@ rm(list = ls())
 # Load Packages
 library(tidyverse)
 library(spOccupancy)
-library(MCMCvis)
 library(fs)
-library(suncalc)
-library(sf)
 
 # Set Seed
 set.seed(27606)
@@ -59,7 +56,7 @@ conf_thresh <-  conf_thresh_raw |>
 glimpse(conf_thresh)
 
 # Make a species list
-sp_ls <- conf_thresh |> pull(Species)  
+sp_ls_cnf_thr <- conf_thresh |> pull(Species)  
 
 # Join these with the detentions, remove unnecessary columns, and add the confidence thresholds
 dct_flt <- dct_raw |> 
@@ -72,7 +69,7 @@ dct_flt <- dct_raw |>
          Species = str_replace_all(Species, " ", "."),
          Species = str_replace_all(Species, "-", ".")) |>
   # Select only the species of interest
-  filter(Species %in% sp_ls) |> 
+  filter(Species %in% sp_ls_cnf_thr) |> 
   mutate(File.Time = str_extract(basename(File), "\\d{6}\\.wav"),
          Num.Time = str_remove_all(File.Time, "\\.wav"),
          Date.Time = paste(as.character(Date), Num.Time),
@@ -102,6 +99,31 @@ dct_flt <- dct_raw |>
 # View
 glimpse(dct_flt)
 
+# View sites with 1 or 0 days with detections
+low_dct_plt <- dct_flt |> 
+  distinct(Species, Plot, Date) |> 
+  count(Species, Plot) |> 
+  filter(n < 2) |> 
+  mutate(Species.Plot = paste(Species, Plot, sep = ".")) |> 
+  pull(Species.Plot)
+# View
+low_dct_plt
+
+# Make a new version of the data without these 
+dct_mod <- dct_flt |> 
+  mutate(Species.Plot = paste(Species, Plot, sep = ".")) |> 
+  filter(!Species.Plot %in% low_dct_plt) |> 
+  select(-Species.Plot)
+# View
+glimpse(dct_mod)
+
+# Make the final species list
+sp_ls <- dct_mod |> 
+  distinct(Species) |> 
+  arrange(Species) |> 
+  pull(Species)
+sp_ls
+
 ################################################################################
 # 2) Convert data to a format for spOccupancy ##################################
 ################################################################################
@@ -111,13 +133,6 @@ glimpse(dct_flt)
 
 # View the Raw detection Data
 glimpse(dct_raw)
-
-# Clean
-dct_raw_clean <-  dct_raw |> 
-  mutate(Date = ymd(Date)) |> 
-  select(Plot, Date)
-#View again
-glimpse(dct_raw_clean)
 
 # Find the missing surveys
 vst_dates <- dct_raw |> 
@@ -169,7 +184,7 @@ date_idnx |>
   print(n = Inf)
 
 # Widen the detection data
-dct_wide <-  dct_flt |>
+dct_wide <-  dct_mod |>
   mutate(Occupied = 1,
          Species = str_remove_all(Species, "'"),
          Species = str_replace_all(Species, " ", "."),
@@ -383,7 +398,7 @@ n_chains <- 3
 (n_sample - n_burn) / n_thin
 
 # Model formulas 
-occ_formu <- ~ factor(Plot.Type) + Effort
+occ_formu <- ~ factor(Plot.Type) 
 det_formu <- ~ date + I(date^2)
 
 # Directory for the model output

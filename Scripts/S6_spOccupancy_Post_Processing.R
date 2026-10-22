@@ -62,7 +62,7 @@ conf_thresh <-  conf_thresh_raw |>
 glimpse(conf_thresh)
 
 # Make a species list
-sp_ls <- conf_thresh |> pull(Species)  
+sp_ls_cnf_thr <- conf_thresh |> pull(Species)  
 
 # Join these with the detentions, remove unnecessary columns, and add the confidence thresholds
 dct_flt <- dct_raw |> 
@@ -75,7 +75,7 @@ dct_flt <- dct_raw |>
          Species = str_replace_all(Species, " ", "."),
          Species = str_replace_all(Species, "-", ".")) |>
   # Select only the species of interest
-  filter(Species %in% sp_ls) |> 
+  filter(Species %in% sp_ls_cnf_thr) |> 
   mutate(File.Time = str_extract(basename(File), "\\d{6}\\.wav"),
          Num.Time = str_remove_all(File.Time, "\\.wav"),
          Date.Time = paste(as.character(Date), Num.Time),
@@ -105,134 +105,167 @@ dct_flt <- dct_raw |>
 # View
 glimpse(dct_flt)
 
+# View sites with 1 or 0 days with detections
+low_dct_plt <- dct_flt |> 
+  distinct(Species, Plot, Date) |> 
+  count(Species, Plot) |> 
+  filter(n < 2) |> 
+  mutate(Species.Plot = paste(Species, Plot, sep = ".")) |> 
+  pull(Species.Plot)
+# View
+low_dct_plt
+
+# Make a new version of the data without these 
+dct_mod <- dct_flt |> 
+  mutate(Species.Plot = paste(Species, Plot, sep = ".")) |> 
+  filter(!Species.Plot %in% low_dct_plt) |> 
+  select(-Species.Plot)
+# View
+glimpse(dct_mod)
+
+# Make the final species list
+sp_ls <- dct_mod |> 
+  distinct(Species) |> 
+  arrange(Species) |> 
+  pull(Species)
+sp_ls
+
 # Load the spOccupancy output back in
 aru_occ_mod <- readRDS(path(mcmc_dir, "aru_occ_mod1.rds"))
 
 # View MCMC summary
 names(aru_occ_mod)
 summary(aru_occ_mod)
+str(aru_occ_mod$beta.samples)
+# How many detections with less than 10 detections 
+dct_flt |> 
+  # distinct(Species, Plot, Date) |>
+  count(Species, Plot) |> 
+  filter(n <= 2) |>
+  # count(Species) |> 
+  print(n = Inf)
 
 ################################################################################
 # 2) Model Diagnostics #########################################################
 ################################################################################
 
-# 2.1) Preliminary diagnostics -------------------------------------------------
-
-# Traceplots 
-# plot(aru_occ_mod, 'beta', density = FALSE)
-# plot(aru_occ_mod, "alpha", density = FALSE)
-
-# 2.2) Goodness of fit stats by plot -------------------------------------------
-aru_occ_out_plt <- ppcOcc(aru_occ_mod, fit.stat = "freeman-tukey", group = 1) 
-
-# View
-summary(aru_occ_out_plt)
-str(aru_occ_out_plt)
-
-# Convert to a data frame
-aru_occ_out_plt_tbl <- data.frame(
-  fit = aru_occ_out_plt$fit.y,
-  fit.rep = aru_occ_out_plt$fit.y.rep
-) |> 
-  tibble()
-
-# View
-glimpse(aru_occ_out_plt_tbl)
-
-# Pivot Longer
-aru_occ_out_plt_lng <- aru_occ_out_plt_tbl |> 
-  pivot_longer(
-    cols = everything(),
-    names_to = c(".value", "species"),
-    names_pattern = "^(fit\\.rep|fit)\\.(\\d+)$"
-  ) %>%
-  mutate(
-    species = as.numeric(species),
-    rep.greater = fit.rep > fit
-  )
-# View
-glimpse(aru_occ_out_plt_lng)
-
-# Visualize
-aru_occ_out_plt_lng |> 
-   ggplot(aes(x = fit, y = fit.rep)) +
-  geom_abline(slope = 1, intercept = 0, color = "black", linewidth = 0.8) +
-  geom_point(aes(fill = rep.greater), shape = 21, color = "black", size = 2.5, alpha = 0.8) +
-  scale_fill_manual(
-    values = c("FALSE" = "lightskyblue1", "TRUE" = "lightsalmon"),
-    guide = "none" 
-  ) +
-  labs(
-    x = "True",
-    y = "Fit",
-    title = "Posterior Predictive Check by Plot"
-  ) +
-  theme_classic() 
-
-# Which plots contribute to the poor goodness of fit? 
-aru_occ_out_fit_plt <- aru_occ_out_plt$fit.y.rep.group.quants[3, , ] - aru_occ_out_plt$fit.y.group.quants[3, , ]
-plot(aru_occ_out_fit_plt, pch = 19, xlab = 'Site ID', ylab = 'Replicate - True Discrepancy')
-
-# 2.3 Repeat at the visit level ----------------------------------------------------
-aru_occ_out_vst <- ppcOcc(aru_occ_mod, fit.stat = "freeman-tukey", group = 2) 
-
-# View
-summary(aru_occ_out_vst)
-str(aru_occ_out_vst)
-
-# Convert to a data frame
-aru_occ_out_vst_tbl <- data.frame(
-  fit = aru_occ_out_vst$fit.y,
-  fit.rep = aru_occ_out_vst$fit.y.rep
-) |> 
-  tibble()
-
-# View
-glimpse(aru_occ_out_vst_tbl)
-
-# Pivot Longer
-aru_occ_out_vst_lng <- aru_occ_out_vst_tbl |> 
-  pivot_longer(
-    cols = everything(),
-    names_to = c(".value", "species"),
-    names_pattern = "^(fit\\.rep|fit)\\.(\\d+)$"
-  ) %>%
-  mutate(
-    species = as.numeric(species),
-    rep.greater = fit.rep > fit
-  )
-# View
-glimpse(aru_occ_out_vst_lng)
-
-# Visualize
-aru_occ_out_vst_lng |> 
-  ggplot(aes(x = fit, y = fit.rep)) +
-  geom_abline(slope = 1, intercept = 0, color = "black", linewidth = 0.8) +
-  geom_point(aes(fill = rep.greater), shape = 21, color = "black", size = 2.5, alpha = 0.8) +
-  scale_fill_manual(
-    values = c("FALSE" = "lightskyblue1", "TRUE" = "lightsalmon"),
-    guide = "none" 
-  ) +
-  labs(
-    x = "True",
-    y = "Fit",
-    title = "Posterior Predictive Check by replicate"
-  ) +
-  theme_classic() 
+# # 2.1) Preliminary diagnostics -------------------------------------------------
+# 
+# # Traceplots 
+# # plot(aru_occ_mod, 'beta', density = FALSE)
+# # plot(aru_occ_mod, "alpha", density = FALSE)
+# 
+# # 2.2) Goodness of fit stats by plot -------------------------------------------
+# aru_occ_out_plt <- ppcOcc(aru_occ_mod, fit.stat = "freeman-tukey", group = 1) 
+# 
+# # View
+# summary(aru_occ_out_plt)
+# str(aru_occ_out_plt)
+# 
+# # Convert to a data frame
+# aru_occ_out_plt_tbl <- data.frame(
+#   fit = aru_occ_out_plt$fit.y,
+#   fit.rep = aru_occ_out_plt$fit.y.rep
+# ) |> 
+#   tibble()
+# 
+# # View
+# glimpse(aru_occ_out_plt_tbl)
+# 
+# # Pivot Longer
+# aru_occ_out_plt_lng <- aru_occ_out_plt_tbl |> 
+#   pivot_longer(
+#     cols = everything(),
+#     names_to = c(".value", "species"),
+#     names_pattern = "^(fit\\.rep|fit)\\.(\\d+)$"
+#   ) %>%
+#   mutate(
+#     species = as.numeric(species),
+#     rep.greater = fit.rep > fit
+#   )
+# # View
+# glimpse(aru_occ_out_plt_lng)
+# 
+# # Visualize
+# aru_occ_out_plt_lng |> 
+#    ggplot(aes(x = fit, y = fit.rep)) +
+#   geom_abline(slope = 1, intercept = 0, color = "black", linewidth = 0.8) +
+#   geom_point(aes(fill = rep.greater), shape = 21, color = "black", size = 2.5, alpha = 0.8) +
+#   scale_fill_manual(
+#     values = c("FALSE" = "lightskyblue1", "TRUE" = "lightsalmon"),
+#     guide = "none" 
+#   ) +
+#   labs(
+#     x = "True",
+#     y = "Fit",
+#     title = "Posterior Predictive Check by Plot"
+#   ) +
+#   theme_classic() 
+# 
+# # Which plots contribute to the poor goodness of fit? 
+# aru_occ_out_fit_plt <- aru_occ_out_plt$fit.y.rep.group.quants[3, , ] - aru_occ_out_plt$fit.y.group.quants[3, , ]
+# plot(aru_occ_out_fit_plt, pch = 19, xlab = 'Site ID', ylab = 'Replicate - True Discrepancy')
+# 
+# # 2.3 Repeat at the visit level ----------------------------------------------------
+# aru_occ_out_vst <- ppcOcc(aru_occ_mod, fit.stat = "freeman-tukey", group = 2) 
+# 
+# # View
+# summary(aru_occ_out_vst)
+# str(aru_occ_out_vst)
+# 
+# # Convert to a data frame
+# aru_occ_out_vst_tbl <- data.frame(
+#   fit = aru_occ_out_vst$fit.y,
+#   fit.rep = aru_occ_out_vst$fit.y.rep
+# ) |> 
+#   tibble()
+# 
+# # View
+# glimpse(aru_occ_out_vst_tbl)
+# 
+# # Pivot Longer
+# aru_occ_out_vst_lng <- aru_occ_out_vst_tbl |> 
+#   pivot_longer(
+#     cols = everything(),
+#     names_to = c(".value", "species"),
+#     names_pattern = "^(fit\\.rep|fit)\\.(\\d+)$"
+#   ) %>%
+#   mutate(
+#     species = as.numeric(species),
+#     rep.greater = fit.rep > fit
+#   )
+# # View
+# glimpse(aru_occ_out_vst_lng)
+# 
+# # Visualize
+# aru_occ_out_vst_lng |> 
+#   ggplot(aes(x = fit, y = fit.rep)) +
+#   geom_abline(slope = 1, intercept = 0, color = "black", linewidth = 0.8) +
+#   geom_point(aes(fill = rep.greater), shape = 21, color = "black", size = 2.5, alpha = 0.8) +
+#   scale_fill_manual(
+#     values = c("FALSE" = "lightskyblue1", "TRUE" = "lightsalmon"),
+#     guide = "none" 
+#   ) +
+#   labs(
+#     x = "True",
+#     y = "Fit",
+#     title = "Posterior Predictive Check by replicate"
+#   ) +
+#   theme_classic() 
 
 ################################################################################
 # 3) Predictions ###############################################################
 ################################################################################
 
 # View the output again
-summary(aru_occ_mod)
+summary(aru_occ_mod$beta.samples)
 
 # Define a credible interval width
 ci_max <- 0.875
 ci_min <- 1 - ci_max
 
 # Model formulas 
-occ_formu <- ~ factor(Plot.Type) + Effort
+occ_formu <- ~ factor(Plot.Type) 
 det_formu <- ~ date + I(date^2)
 
 # Generate sample plots for predictions
@@ -310,7 +343,7 @@ wind_pal <- c(
 aru_occ_prob_pred_fig <- aru_occ_prob_pred_sum |>
   mutate(Species = str_replace_all(Species, fixed("."), " ")) |>
   mutate(Species = factor(Species)) |> 
-  mutate(Species = fct_reorder(Species, desc(Species))) |> 
+  mutate(Species = fct_reorder(Species, Mean)) |> 
   ggplot(aes(y = Species)) +
   # Add points at the mean values for each parameter
   geom_point(
@@ -350,7 +383,7 @@ aru_occ_prob_pred_fig <- aru_occ_prob_pred_sum |>
     axis.title.x = element_blank(),
     axis.text.x = element_text(size = 10)
   ) +
-  facet_wrap(~Plot.Type)
+  facet_wrap(~Plot.Type, nrow = 1, ncol = 4)
 
 # View the plot 
 aru_occ_prob_pred_fig
@@ -358,8 +391,8 @@ aru_occ_prob_pred_fig
 # Save the plot as a png
 ggsave(plot = aru_occ_prob_pred_fig,
        path(fig_dir, "aru_occupancy_prob_plot_type_whiskers.png"),
-       width = 200,
-       height = 175,
+       width = 250,
+       height = 150,
        units = "mm",
        dpi = 300)
 
@@ -368,19 +401,20 @@ ggsave(plot = aru_occ_prob_pred_fig,
 
 # Palette
 signif_pal <- c(
-  "Supported Difference" = "darkblue",
+  "Increased Occupancy near Turbines" = "darkorchid4",
+  "Decreased Occupancy near Turbines" = "turquoise4",
   "No Supported Difference" = "gray30"
- )
+)
 
 # Extract differences between turbines and the other plot types
 aru_occ_diff_tb_if <- data.frame(aru_occ_prob_pred[, , 3] - aru_occ_prob_pred[, , 1]) |> 
   tibble() |> 
   pivot_longer(names_to = "Species", values_to = "Psi", cols = everything()) |> 
-  mutate(Psi.Diff = "Turbine vs Interior Forest")
+  mutate(Psi.Diff = "Interior Forest vs Turbine")
 aru_occ_diff_tb_re <- data.frame(aru_occ_prob_pred[, , 3] - aru_occ_prob_pred[, , 2]) |> 
   tibble() |> 
   pivot_longer(names_to = "Species", values_to = "Psi", cols = everything()) |> 
-  mutate(Psi.Diff = "Turbine vs Reference Edge")
+  mutate(Psi.Diff = "Reference Edge vs Turbine")
 # View
 glimpse(aru_occ_diff_tb_if)
 glimpse(aru_occ_diff_tb_re)
@@ -396,9 +430,10 @@ aru_occ_diff_full <- bind_rows(
           CI.High = quantile(Psi, probs = ci_max)
   )  |> 
   distinct() |> 
-  mutate(Supported = case_when(CI.High*CI.Low > 0 ~ "Supported Difference",
-                               CI.High*CI.Low <= 0 ~ "No Supported Difference"
-                               )) 
+  mutate(Supported = case_when(CI.Low > 0 & CI.High > 0 ~ "Increased Occupancy near Turbines",
+                               CI.Low < 0 & CI.High < 0 ~ "Decreased Occupancy near Turbines",
+                               CI.Low * CI.High < 0 ~ "No Supported Difference"
+  )) 
 # View
 glimpse(aru_occ_diff_full)
 
@@ -406,7 +441,7 @@ glimpse(aru_occ_diff_full)
 aru_occ_diff_plot_whisker <- aru_occ_diff_full |>
   mutate(Species = str_replace_all(Species, fixed("."), " ")) |>
   mutate(Species = factor(Species)) |> 
-  mutate(Species = fct_reorder(Species, desc(Species))) |> 
+  mutate(Species = fct_reorder(Species, Mean)) |> 
   ggplot(aes(y = Species)) +
   # Add points at the mean values for each parameter
   geom_point(
@@ -443,7 +478,8 @@ aru_occ_diff_plot_whisker <- aru_occ_diff_full |>
     axis.title.x = element_blank(),
     axis.text.x = element_text(size = 10)
   ) +
-  facet_wrap(~Psi.Diff)
+  facet_wrap(~Psi.Diff, nrow = 1, ncol = 4)
+
 
 # View the plot 
 aru_occ_diff_plot_whisker
@@ -451,8 +487,8 @@ aru_occ_diff_plot_whisker
 # Save the plot as a png
 ggsave(plot = aru_occ_diff_plot_whisker,
        path(fig_dir, "aru_occupancy_diff_plot_type_whiskers.png"),
-       width = 200,
-       height = 175,
+       width = 250,
+       height = 150,
        units = "mm",
        dpi = 300)
 
