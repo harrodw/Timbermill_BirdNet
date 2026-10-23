@@ -32,7 +32,7 @@ glimpse(all_species)
 
 # How many classes?
 all_species %>% 
-  distinct(class)
+  count(class)
 
 ################################################################################
 # 2) Decide on possible species ################################################
@@ -176,25 +176,27 @@ long <- -76.598058
 # define a week (April 22nd)
 week <- 20
 
-# load the meta model
-meta_model <- birdnet_model_meta("v2.4")
-
-# What bird species are possible?
-# Predict species occurrence during the average week of the audio recording
-pred_birds <- predict_species_at_location_and_time(meta_model,
-                                                         latitude = lat,
-                                                         longitude = long,
-                                                          week = week) %>%
-  arrange(-confidence)
-
-# View
-pred_birds
-pred_birds$label
+########################### Comment out ########################################
+# # load the meta model
+# meta_model <- birdnet_model_meta("v2.4")
+# 
+# # What bird species are possible?
+# # Predict species occurrence during the average week of the audio recording
+# pred_birds <- predict_species_at_location_and_time(meta_model,
+#                                                          latitude = lat,
+#                                                          longitude = long,
+#                                                           week = week) %>%
+#   arrange(-confidence)
+# 
+# # View
+# pred_birds
+# pred_birds$label
+########################### Comment out ########################################
 
 # List of possible birds 
 psb_bird_codes <- c(
     "Colinus virginianus_Northern Bobwhite",
-    # "Meleagris gallopavo_Wild Turkey",
+    "Meleagris gallopavo_Wild Turkey",
     # "Branta canadensis_Canada Goose",
     # "Aix sponsa_Wood Duck",
     # "Spatula discors_Blue-winged Teal",
@@ -310,16 +312,16 @@ psb_bird_codes <- c(
     "Spizella pusilla_Field Sparrow",
     # "Passerculus sandwichensis_Savannah Sparrow",
     # "Ammospiza maritima_Seaside Sparrow",
-    "Melospiza melodia_Song Sparrow",
+    # "Melospiza melodia_Song Sparrow",
     # "Melospiza georgiana_Swamp Sparrow",
     # "Zonotrichia albicollis_White-throated Sparrow",
     "Pipilo erythrophthalmus_Eastern Towhee",
     "Icteria virens_Yellow-breasted Chat",
     # "Dolichonyx oryzivorus_Bobolink",
-    "Sturnella magna_Eastern Meadowlark",
+    # "Sturnella magna_Eastern Meadowlark",
     "Icterus spurius_Orchard Oriole",
     # "Icterus galbula_Baltimore Oriole",
-    "Agelaius phoeniceus_Red-winged Blackbird",
+    # "Agelaius phoeniceus_Red-winged Blackbird",
     "Molothrus ater_Brown-headed Cowbird",
     # "Quiscalus quiscula_Common Grackle",
     # "Quiscalus major_Boat-tailed Grackle",
@@ -365,6 +367,15 @@ slice_head(psb_birds, n = Inf)
 
 # How many birds?
 nrow(psb_birds)
+
+
+# 2.5) Other sounds -------------------------------------------------------------------
+
+# What other sounds are in BirNet?
+all_other <- all_species %>% 
+  filter(is.na(class)) %>% 
+  distinct(class, order, family, genus, species, common_name, full_code) 
+all_other
 
 ################################################################################
 # 3) Save the data #############################################################
