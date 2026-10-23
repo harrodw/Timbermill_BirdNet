@@ -1,6 +1,6 @@
 ################################################################################
 # Title: Validating BirdNET classifications with an R Shiny app
-# BirdNet R workflow, Script 3 of 3
+# BirdNet R workflow, Script 5 of 10
 # Author: Will Harrod
 # Date Created: 2025-12-23
 ################################################################################
@@ -12,11 +12,9 @@
 # 1) Prep ######################################################################
 ################################################################################
 
-# Install packages 
-# install.packages("tidyverse", "seewave", "tuneR", "shiny", "bslib", "audio")
-
 # Load Packages 
 library(tidyverse)
+library(fs)
 library(seewave)
 library(tuneR)
 library(shiny)
@@ -25,14 +23,15 @@ library(audio)
 
 # File Paths (Change these for your device) ------------------------------------
 
-# Set the primary working directory
-main_wd <- "C:\\NCSU\\Disertation_Code\\BirdNet"
-setwd(main_wd)
+# Set the audio working directory
+audi_dir <- "/media/will/Timbermill/Bird_Anuran_ARUs"
 
 # Name of the directory that holds your validation data 
 validations_dir <- "C:\\NCSU\\Disertation_Code\\BirdNet"
+
 # Name of the validation data 
 validations_file <- "Data\\uf_validations.csv"
+
 # ------------------------------------------------------------------------------
 
 # Combine file directory and name
@@ -76,24 +75,24 @@ n_valid <- nrow(birds_to_valid_raw)/n_species
 # n_valid
 
 # Clean the validation data 
-birds_to_valid <- birds_to_valid_raw %>% 
-  group_by(Species) %>%
-  mutate(Voc.ID = 1:n()) %>% 
-  ungroup() %>% 
-  mutate(Confidence = round(Confidence, 2)) %>% 
+birds_to_valid <- birds_to_valid_raw |> 
+  group_by(Species) |>
+  mutate(Voc.ID = 1:n()) |> 
+  ungroup() |> 
+  mutate(Confidence = round(Confidence, 2)) |> 
   select(rowid, Species, Confidence, True.Positive, Voc.ID, ARU.Name, Date, Hour, Minute, Second, File)
 # glimpse(birds_to_valid)
 
 # Define the default bird 
-default_bird <- birds_to_valid %>% 
-  arrange(Species) %>% 
-  slice_head(n = 1) %>% 
+default_bird <- birds_to_valid |> 
+  arrange(Species) |> 
+  slice_head(n = 1) |> 
   pull(Species)
 # default_bird
 
 # Starting snippets to vaildate
-default_valid_ids <- birds_to_valid %>% 
-  filter(Species == default_bird) %>% 
+default_valid_ids <- birds_to_valid |> 
+  filter(Species == default_bird) |> 
   pull(Voc.ID)
 # default_valid_ids
 
@@ -307,11 +306,11 @@ server <- function(input, output, session) {
     req(input$species, validations())
     
     # Filter to a species
-    data <- validations() %>% filter(Species == input$species)
+    data <- validations() |> filter(Species == input$species)
     
     # Check if the user wants to filter out validated rows
     if (input$unval_only == "Unvalidated Vocalizations") {
-      data <- data %>% filter(is.na(True.Positive))
+      data <- data |> filter(is.na(True.Positive))
     }
     # Return the selection
     return(data)
@@ -324,14 +323,14 @@ server <- function(input, output, session) {
     req(input$voc, selected_species())
     
     # Select vocalization
-    selected_species() %>% filter(Voc.ID == input$voc)
+    selected_species() |> filter(Voc.ID == input$voc)
   }) # End vocalization selection
   
   # Update the number of vocalizations whenever species OR filter changes
   observeEvent(c(input$species, input$unval_only), {
     
     # Get the IDs from the filtered reactive we just made
-    new_voc_list <- selected_species() %>% pull(Voc.ID)
+    new_voc_list <- selected_species() |> pull(Voc.ID)
     
     # Update the hidden selector
     updateSelectInput(session = session,
@@ -344,13 +343,13 @@ server <- function(input, output, session) {
   
   # Update the total number of vocalizations
   total_voc <- reactive({
-    validations() %>% filter(Species == input$species) %>% pull(Voc.ID) %>% max()
+    validations() |> filter(Species == input$species) |> pull(Voc.ID) |> max()
   }) # End total vocalization reactivity
 
   
   # Update the ID of the vocalization
   voc_id <- reactive({
-    selected_vocalization() %>% pull(Voc.ID)
+    selected_vocalization() |> pull(Voc.ID)
   })# End vocalization ID reactivity
   
   # ----------------------------------------------------------------------------
@@ -363,14 +362,14 @@ server <- function(input, output, session) {
   output$spectro_plot <- renderPlot({
     
     # Define and check file
-    wav_file <- selected_vocalization() %>% pull(File)
+    wav_file <- selected_vocalization() |> pull(File)
     if(!file.exists(wav_file)) return(NULL)
     
     # Read and Save
     wav <- readWave(wav_file)
     
     # Define the confidence score
-    conf <- selected_vocalization() %>% pull(Confidence)
+    conf <- selected_vocalization() |> pull(Confidence)
     
     # Create the spectrogram
     spectro(wav = wav,
@@ -394,36 +393,36 @@ server <- function(input, output, session) {
     req(input$species)
 
     # Edit the data 
-    logit_reg_dat <- validations() %>% 
-      filter(Species == input$species & !is.na(True.Positive)) %>%
-      select(True.Positive, Confidence) %>%
+    logit_reg_dat <- validations() |> 
+      filter(Species == input$species & !is.na(True.Positive)) |>
+      select(True.Positive, Confidence) |>
       mutate(True.Positive = case_when(True.Positive == 1 ~ "True.Positive",
                                        True.Positive == 0 ~ "False.Positive"),
              # Make confidence score discrete 
-             Conf.Bin = 1 + floor(Confidence/bin_size)) %>%
+             Conf.Bin = 1 + floor(Confidence/bin_size)) |>
       mutate(True.Positive = factor(True.Positive,
-                                    levels = c("True.Positive", "False.Positive"))) %>%
-      droplevels() %>% 
-      arrange(Conf.Bin) %>% 
-      count(Conf.Bin, True.Positive) %>% 
-      group_by(Conf.Bin) %>% 
-      pivot_wider(names_from = True.Positive, values_from = n) %>% 
+                                    levels = c("True.Positive", "False.Positive"))) |>
+      droplevels() |> 
+      arrange(Conf.Bin) |> 
+      count(Conf.Bin, True.Positive) |> 
+      group_by(Conf.Bin) |> 
+      pivot_wider(names_from = True.Positive, values_from = n) |> 
       # Ensure both columns exist even if one category is missing in the data
       mutate(True.Positive = if("True.Positive" %in% names(.)) True.Positive else 0,
-             False.Positive = if("False.Positive" %in% names(.)) False.Positive else 0) %>%
-      mutate(across(.cols = everything(), .fns = ~replace_na(., 0))) %>% 
+             False.Positive = if("False.Positive" %in% names(.)) False.Positive else 0) |>
+      mutate(across(.cols = everything(), .fns = ~replace_na(., 0))) |> 
       mutate(Confidence = Conf.Bin*bin_size, 
              TP.Rate = True.Positive/(True.Positive + False.Positive)) 
     
     # Minimum confidence threshold over 0.95
-    threashhold <- validations() %>%
-      filter(Species == input$species & True.Positive == 0) %>% 
-      arrange(-Confidence) %>% 
-      slice_head(n = 1) %>% 
+    threashhold <- validations() |>
+      filter(Species == input$species & True.Positive == 0) |> 
+      arrange(-Confidence) |> 
+      slice_head(n = 1) |> 
       pull(Confidence)
       
     # Make the plot
-    logit_reg_dat %>% 
+    logit_reg_dat |> 
       ggplot(aes(x = Confidence, y = TP.Rate)) +
       geom_smooth(method = "glm", method.args = list(family = "binomial"), 
                   se = FALSE,
@@ -455,24 +454,24 @@ server <- function(input, output, session) {
   #   req(input$species) 
   #   
   #   # Pull out only the validated rows 
-  #   valid_dat <- validations() %>% 
-  #     filter(Species == input$species & !is.na(True.Positive)) %>% 
-  #     select(True.Positive, Confidence) %>% 
+  #   valid_dat <- validations() |> 
+  #     filter(Species == input$species & !is.na(True.Positive)) |> 
+  #     select(True.Positive, Confidence) |> 
   #     mutate(True.Positive = case_when(True.Positive == 1 ~ "True Positive",
-  #                                      True.Positive == 0 ~ "False Positive")) %>% 
+  #                                      True.Positive == 0 ~ "False Positive")) |> 
   #     mutate(True.Positive = factor(True.Positive, 
-  #                                   levels = c("True Positive", "False Positive"))) %>% 
+  #                                   levels = c("True Positive", "False Positive"))) |> 
   #     droplevels()
   #   
   #   # Find the highest confidence score for a false positive 
-  #   # false_pos <- valid_dat %>% 
+  #   # false_pos <- valid_dat |> 
   #     # filter(True.Positive == 0)
   #   
   #   # set line to zero if there are no false positives yet
   #   # max_false <- ifelse(length(false_pos) > 0, max(false_pos$Confidence), 0.01)
   #   
   #   # Historgram of confidence scores color-coded by true positive status 
-  #   valid_dat %>% 
+  #   valid_dat |> 
   #     ggplot(aes(x = Confidence, 
   #                # colour = True.Positive, 
   #                fill = True.Positive)) +
@@ -503,18 +502,18 @@ server <- function(input, output, session) {
     req(input$species) 
     
     # Change the species data to have descriptive titles based on validation progress
-    progress_dat <- validations() %>% 
-      filter(Species == input$species) %>%
+    progress_dat <- validations() |> 
+      filter(Species == input$species) |>
       mutate(True.Positive = case_when(is.na(True.Positive) ~ "Not Validated",
                                        True.Positive == 1 ~ "True Positive",
-                                       True.Positive == 0 ~ "False Positive")) %>% 
+                                       True.Positive == 0 ~ "False Positive")) |> 
       mutate(True.Positive = factor(True.Positive, 
                                     levels = c("Not Validated", 
                                                "True Positive", 
                                                "False Positive")))
     
     # Plot progress
-    progress_dat %>% 
+    progress_dat |> 
       ggplot(aes(x = "", fill = True.Positive, col = True.Positive)) +
       geom_bar(width = 1) +
       scale_fill_manual(values = pie_pal) +
@@ -534,7 +533,7 @@ server <- function(input, output, session) {
   observeEvent(c(input$play, input$voc, input$species), {
     
     # Define and check file
-    wav_file <- selected_vocalization() %>% pull(File)
+    wav_file <- selected_vocalization() |> pull(File)
     if(!file.exists(wav_file)) return(NULL)
     
     # Read and Save
@@ -576,7 +575,7 @@ server <- function(input, output, session) {
     current_validation <- validations()
     
     # Add a true positive 
-    current_validation <- current_validation %>% 
+    current_validation <- current_validation |> 
       mutate(True.Positive = case_when(Species == input$species & Voc.ID == as.numeric(input$voc) ~ 1,
                                        TRUE ~ as.numeric(True.Positive)))
     
@@ -606,7 +605,7 @@ server <- function(input, output, session) {
     current_validation <- validations()
     
     # Add a false positive 
-    current_validation <- current_validation %>% 
+    current_validation <- current_validation |> 
       mutate(True.Positive = case_when(Species == input$species & Voc.ID == as.numeric(input$voc) ~ 0,
                                        TRUE ~ as.numeric(True.Positive)))
     
