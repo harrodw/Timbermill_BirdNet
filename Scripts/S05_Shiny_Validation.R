@@ -353,7 +353,17 @@ server <- function(input, output, session) {
     req(file_exists(file_path))
 
     # Clean the validation data
-    birds_to_valid <- read_csv(file_path) |>
+    birds_to_valid <- read_csv(
+      file = file_path, 
+      show_col_types = FALSE,
+      col_types = cols(
+        True.Positive = col_double(),
+        Other.Sp1 = col_character(),
+        Other.Sp2 = col_character(),
+        Other.Sp3 = col_character(),
+        Other.Sp4 = col_character(),
+        Other.Sp5 = col_character())
+      )|>
       arrange(Species, -Confidence) |>
       group_by(Species) |>
       mutate(Voc.ID = 1:n()) |>
