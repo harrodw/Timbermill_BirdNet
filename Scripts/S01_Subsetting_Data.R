@@ -44,13 +44,14 @@ length(aru_dirs)
 aru_dirs
 
 # Find the number of recordings made by each ARU
-rec_counts <- aru_dirs %>% 
+rec_counts <- aru_dirs %>%
   set_names() %>% 
   map_int(~length(list.files(.x))) %>% 
   enframe(name = "path", value = "rec.count") %>% 
-  mutate(site.id = str_extract(path, "[A-Z]{2}\\d{2}")) %>% 
-  select(path, site.id, rec.count)
-
+  mutate(site.id = basename(path)) %>% 
+  select(path, site.id, rec.count) |> 
+  # OPTIONAL -- Remove the plot that was only surveyed for a week
+  filter(!site.id %in% c("IF10")) 
 
 # View the counts by ARU
 print(rec_counts, n = Inf)
@@ -109,6 +110,10 @@ lrg_fil_sze <-  fs_bytes("100M")
 min_days <- min_days_dat$total.days
 min_days
 
+# Define how many audio files to pull(either minimum days or mannually)
+n_recs <- min_days
+n_recs <- 20
+
 # Create a folder for subsetted data
 out_dir <- "Subsetted_ARU_Data"
 dir_create(out_dir, recurse = TRUE)
@@ -124,47 +129,48 @@ for(i in 1:n_arus){
   aru <- rec_counts$site.id[i]
   
   # Create a new folder for that aru
-  dir_create(path("Subsetted_ARU_Data", aru), recurse = TRUE)
+  dir_create(path(out_dir, aru), recurse = TRUE)
+  
+  # List all of the files
+  all_wavs <- dir_ls(
+    path = aru_path,
+    recurse = TRUE,
+    regexp = "\\.[Ww][Aa][Vv]$",
+    type = "file"
+  )
   
   # List the recordings made by that ARU during the day
   recordings <- dir_info(aru_path) |> 
     tibble() |> 
     filter(size > lrg_fil_sze) |> 
-    select(path) 
-    # mutate(day = str_extract(audio.files, "_\\d{8}_")) %>% 
-    # mutate(day = str_remove_all(day, "_")) 
+    select(path) |> 
+    mutate(day = str_extract(basename(path), "\\d{8}"))
   
-  # # Find the unique days 
-  # unq_days <- recordings %>% 
-  #   distinct(day) 
+  # Find the unique days
+  unq_days <- recordings %>%
+    distinct(day)
 
-  # # subset a few of days 
-  # slct_days <- unq_days %>% 
-  #   slice_sample(n = min_days) %>% 
-  #   pull(day)
-  # 
+  # subset a few of days
+  slct_days <- unq_days %>%
+    slice_sample(n = n_recs) %>%
+    pull(day)
+
   # List the recordings that took place during those days
-  # slct_recs <- recordings %>%
-  #   filter(day %in% slct_days) %>%
-  #   pull(audio.files)
-  # 
-  # # List all of the files
-  # all_wavs <- dir_ls(
-  #   path = aru_path,
-  #   recurse = TRUE,
-  #   regexp = "\\.[Ww][Aa][Vv]$",
-  #   type = "file"
-  # )
+  slct_recs <- recordings %>%
+    filter(day %in% slct_days) |> 
+    pull(path)
   
   # Filter the ones that were selected 
-  # slct_wavs <- all_wavs[basename(all_wavs) %in% slct_recs]
-  slct_wavs <- recordings$path
+  slct_wavs <- all_wavs[all_wavs %in% slct_recs]
   
  # Copy those files 
   file_copy(
     path = slct_wavs,
-    new_path = path("Subsetted_ARU_Data", aru, str_replace(basename(slct_wavs), "-", "_")),
+    new_path = path(out_dir, aru, str_replace(basename(slct_wavs), "-", "_")),
     overwrite = TRUE
   )
+  
+  # Message after each itteration
+  message("Subsetted audio files for ", aru, ". Plot ", i, " out of ", n_arus, " 🎤🐦")
   
 } # End loop over the ARUs

@@ -1,0 +1,13 @@
+name: Shiny_Validation
+title: Shiny_Validation
+username: harrodw
+account: harrodw
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 18320416
+bundleId: 12770472
+url: https://harrodw.shinyapps.io/Shiny_Validation/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: Ex01_Outdated_Code.R|Ex02_Running_BirdNET_ R.R|S01_Subsetting_Data.R|S02_Species_Selection.R|S03_Classifier_Processing.R|S04_Shiny_Validation_Selection.R|S04_Validation_Selection.R|S05_Shiny_Validation_Will.R|S06_Validation_Post_Processing.R|S07_spOccupancy.R|S08_spOccupancy_Post_Processing.R|S09_Data_Visualization.R|www/temp_audio.wav

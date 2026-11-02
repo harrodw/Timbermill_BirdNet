@@ -104,20 +104,6 @@ species_list <- classif |>
   c(add_sp) |> 
   sort()
 
-# ...Or do this manually (can comment out) ----
-# species_list <- c(
-#   "Pine Warbler", 
-#   "Engine", 
-#   "Pickerel Frog", 
-#   "Field Sparrow", 
-#   "Brimley's Chorus Frog",
-#   "Common Yellowthroat",
-#   "Hooded Warbler",
-#   "Swainson's Warbler",
-#   "Chuck-will's-widow",
-#   "Spring Peeper"
-#   )
-
 # View
 print(species_list)
 
