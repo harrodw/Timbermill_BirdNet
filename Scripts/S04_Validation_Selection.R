@@ -87,11 +87,18 @@ classif |>
   count(Species) |> 
   arrange(-n)
 
+# What dates have been surveyed?
+classif |> 
+  distinct(Species, Date) |> 
+  count(Date) |> 
+  arrange(Date) |> 
+  print(n = Inf)
+
 # Other sounds to add
 add_sp <-  c(
-  "Turbine_Woosh",
-  "Turbine_Mechanical",
-  "Turbine_Boom",
+  "Turbine Woosh",
+  "Turbine Mechanical",
+  "Turbine Boom",
   "Rain",
   "Southern Leopard Frog"
 )

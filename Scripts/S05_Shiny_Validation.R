@@ -23,6 +23,17 @@ library(bslib)
 # Clear environments
 rm(list = ls())
 
+# ############# Comment out ############################
+# # Check the csv to make sure everything is saved
+# csv_path <- "/home/will/NCSU/Data/BirdNet_Validations/MinConf_025_Shiny/birdnet_validations.csv"
+# bn_valid <- read_csv(csv_path)
+# bn_valid |> count(Species, True.Positive) |> print(n = Inf)
+# bn_valid |> 
+#   select(Species, starts_with("Other.Sp")) |>
+#   distinct() |> 
+#   print(n = Inf)
+# #####################################################
+
 # File Paths (Change these for your device) ------------------------------------
 
 # Set the audio working directory
@@ -56,16 +67,17 @@ log_reg_prob <- 0.95
 sim_dat_size <- 1000
 
 # Options for the validation status
-valid_status_choices <- c("Validate New Audio Files", "Check Previously Validated Audio Files")
+valid_status_choices <- c("Validate all Audio Files", "Check Previously Validated Audio Files")
 
 # Other sounds to add that aren't currently in the classifier output
 # These are for training new classifiers
 add_sp <- c(
-  "Turbine_Woosh",
-  "Turbine_Mechanical",
-  "Turbine_Boom",
+  "Turbine Woosh",
+  "Turbine Mechanical",
+  "Turbine Boom",
   "Rain",
-  "Southern Leopard Frog"
+  "Southern Leopard Frog",
+  "Background"
 )
 
 # Palette for your pie chart
@@ -169,19 +181,9 @@ ui <- page_fluid(
              "validation_status", 
              label =  NULL,
              choices = valid_status_choices[1],
-             selected = "Validate New Audio Files",
+             selected = "Validate all Audio Files",
              width = "100%"
            )), # End validation choice
-    
-    # Hidden vocalization selection     
-    div(style = "display: none;",
-        selectInput(
-          "voc", 
-          "Vocalization Number",
-          choices = NULL,
-          selected = NULL,
-          width = "100%"
-        ))  # End vocalization choice
     
   ), # End selection
   
@@ -225,6 +227,47 @@ ui <- page_fluid(
     )), # End display
   
   # ----------------------------------------------------------------------------
+  # Other info in the audio file ----------------------------------------------
+  # ----------------------------------------------------------------------------
+  
+  # Dropdown to list other sounds
+  fluidRow(
+    column(6, class = "mt-2",
+           # Custom color pallete, font, and boarder style 
+           tags$head(tags$style(HTML("#other_species + .selectize-control .selectize-input {border: 1px solid #1f3242;}"))),
+           # Begin species selection
+           selectizeInput(
+             inputId = "other_species", 
+             label = NULL,
+             choices = NULL,
+             selected = NULL,
+             multiple = TRUE,
+             width = "100%",
+             options = list(maxItems = 5,
+                            placeholder = "Select other species present in the recording",
+                            plugins = list("remove_button"))
+           ) # End other sound selection
+    ), # End other sounds
+    
+    # Dropdown to list the sound type
+    column(6, class = "mt-2",
+           # Custom color pallete, font, and boarder style 
+           tags$head(tags$style(HTML("#voc_type + .selectize-control .selectize-input {border: 1px solid #1f3242;}"))),
+           # Begin species selection
+           selectizeInput(
+             inputId = "voc_type", 
+             label = NULL,
+             choices = c("Song", "Call", "Other"),
+             selected = "Song",
+             multiple = TRUE,
+             width = "100%",
+             options = list(maxItems = 5,
+                            placeholder = "What types of sound are in this recording?",
+                            plugins = list("remove_button"))
+           ) # End sound type selection
+    )), # End sound type
+  
+  # ----------------------------------------------------------------------------
   # Validate -------------------------------------------------------------------
   # ----------------------------------------------------------------------------
   
@@ -249,46 +292,6 @@ ui <- page_fluid(
     
   ), # End validation section
   
-  # ----------------------------------------------------------------------------
-  # Other info in the audio file ----------------------------------------------
-  # ----------------------------------------------------------------------------
-  
-  # Dropdown to list other sounds
-  fluidRow(
-    column(6, class = "mt-2",
-           # Custom color pallete, font, and boarder style 
-           tags$head(tags$style(HTML("#other_species + .selectize-control .selectize-input {border: 1px solid #1f3242;}"))),
-           # Begin species selection
-           selectizeInput(
-             inputId = "other_species", 
-             label = NULL,
-             choices = NULL,
-             selected = NULL,
-             multiple = TRUE,
-             width = "100%",
-             options = list(maxItems = 5,
-                            placeholder = "Select other species present in the recording",
-                            plugins = list("remove_button"))
-           ) # End other sound selection
-    ), # End other sounds
-  
-  # Dropdown to list the sound type
-    column(6, class = "mt-2",
-           # Custom color pallete, font, and boarder style 
-           tags$head(tags$style(HTML("#voc_type + .selectize-control .selectize-input {border: 1px solid #1f3242;}"))),
-           # Begin species selection
-           selectizeInput(
-             inputId = "voc_type", 
-             label = NULL,
-             choices = c("Song", "Call", "Other"),
-             selected = "Song",
-             multiple = TRUE,
-             width = "100%",
-             options = list(maxItems = 5,
-                            placeholder = "What types of sound are in this recording?",
-                            plugins = list("remove_button"))
-           ) # End sound type selection
-    )), # End sound type
   
   # ----------------------------------------------------------------------------
   # Navigation -----------------------------------------------------------------
@@ -327,7 +330,7 @@ ui <- page_fluid(
                         width = "100%",
                         class = "btn-primary"
            ) # End download button
-    )) # End download 
+    )) # End download
   
 ) # End UI
 
@@ -343,11 +346,12 @@ server <- function(input, output, session) {
   # ----------------------------------------------------------------------------
   
   # Initialize reactive values (empty until a file is loaded)
-  valid_ssion     <- reactiveVal(NULL)
+  valid_ssion <- reactiveVal(NULL)
   file_path_ssion <- reactiveVal(NULL)
-  sp_ls_ssion     <- reactiveVal(character(0))
-  save_counter    <- reactiveVal(0)
-  load_counter    <- reactiveVal(0)
+  current_rec <- reactiveVal(NULL)
+  sp_ls_ssion <- reactiveVal(character(0))
+  save_counter <- reactiveVal(0)
+  load_counter <- reactiveVal(0)
   
   # Per-session audio file so several users don't overwrite each other's clip
   audio_file <- paste0("temp_audio_", session$token, ".wav")
@@ -450,12 +454,15 @@ server <- function(input, output, session) {
     file_path_ssion(file_path)
     sp_ls_ssion(sp_ls)
     
+    # Redefine the list of other species 
+    new_other_choices <- sort(c(sp_ls, add_sp))
+    
     # Fill the species selection dropdowns
     updateSelectInput(session, "species", choices = sp_ls, selected = sp_ls[1])
     updateSelectizeInput(session, "other_species",
-                         choices = setdiff(c(sp_ls, add_sp), sp_ls[1]),
+                         choices = setdiff(new_other_choices, sp_ls[1]),
                          selected = character(0))
-    updateSelectInput(session, "validation_status", selected = "Validate New Audio Files")
+    updateSelectInput(session, "validation_status", selected = "Validate all Audio Files")
     
     # Tell the vocalization list a new file was loaded 
     load_counter(load_counter() + 1)
@@ -472,26 +479,39 @@ server <- function(input, output, session) {
     # Required inputs
     req(input$species, input$validation_status, valid_ssion())
     
-    # Filter to a species
-    data <- valid_ssion() |> filter(Species == input$species)
-    
-    # Previously validated rows, or the ones still to do
+    # Filter to a species. Previously validated rows, or the ones still to do
     if(input$validation_status == "Check Previously Validated Audio Files"){
-      filter(data, !is.na(True.Positive))
+      data <- valid_ssion() |> filter(Species == input$species & !is.na(True.Positive))
     } else {
-      filter(data, is.na(True.Positive))
+      data <- valid_ssion() |> filter(Species == input$species)
     }
     
   }) # End validation status selection
+  
+  # The selected vocalization is stored on the server, together with the species it 
+  # belongs to. (It used to live in a hidden input, which made a round trip to the 
+  # browser and back; during a species switch that round trip left the OLD ID in place, 
+  # so the app briefly showed, and loaded, the wrong recording before the right one.)
+  voc_sel <- reactiveVal(NULL)    # list(species = ..., id = ...)
+  
+  # ID of the selected vocalization. Ignores a selection that belongs to another species
+  current_voc <- reactive({
+    sel <- voc_sel()
+    req(sel, input$species, identical(sel$species, input$species))
+    sel$id
+  })
+  
+  # Select a vocalization (of the species currently chosen)
+  select_voc <- function(id) voc_sel(list(species = input$species, id = id))
   
   # Select the vocalization
   selected_vocalization <- reactive({
     
     # Required inputs
-    req(input$voc, selected_species())
+    req(current_voc(), selected_species())
     
     # Select vocalization
-    selected_species() |> filter(Voc.ID == input$voc)
+    selected_species() |> filter(Voc.ID == current_voc())
   }) # End vocalization selection
   
   # ----------------------------------------------------------------------------
@@ -506,12 +526,12 @@ server <- function(input, output, session) {
     if(n_validated > 0) valid_status_choices else valid_status_choices[1]
   }
   
-  # Species changed: update the choices and reset to Validate New
+  # Species changed: update the choices and reset to Validate All
   observeEvent(input$species, {
     req(input$species, valid_ssion())
     updateSelectInput(session, "validation_status",
                       choices = status_choices(),
-                      selected = "Validate New Audio Files")
+                      selected = "Validate all Audio Files")
   }) # End validation type reset
   
   # Validations changed: refresh the choices but keep the current selection
@@ -543,12 +563,12 @@ server <- function(input, output, session) {
                        type = "warning")
     }
     
-    # Update the hidden selector
-    updateSelectInput(session = session,
-                      inputId = "voc",
-                      choices = new_voc_list,
-                      # Select the first available ID automatically
-                      selected = head(new_voc_list, 1))
+    # Start at the first recording that hasn't been validated yet (or the first one)
+    unval_ids <- selected_species() |> filter(is.na(True.Positive)) |> pull(Voc.ID)
+    start_id <- if(length(unval_ids) > 0) unval_ids[1] else head(new_voc_list, 1)
+    
+    # Select the starting recording (nothing if the list is empty)
+    if(length(start_id) == 1) select_voc(start_id) else voc_sel(NULL)
     
   }) # End vocalization list
   
@@ -568,7 +588,7 @@ server <- function(input, output, session) {
     
     # Define the current vocalization selection
     ids <- selected_species() |> pull(Voc.ID)
-    current <- as.numeric(input$voc)
+    current <- as.numeric(current_voc())
     
     # Nothing left in this selection
     if(length(ids) == 0){
@@ -579,61 +599,70 @@ server <- function(input, output, session) {
     # Next ID after the current one
     next_voc <- ids[ids > current][1]
     
-    # Last one in the list and it just left the list (validate-new mode)
+    # Last one in the list and it just left the list (validate-all mode)
     if(is.na(next_voc) && !(current %in% ids)){
       next_voc <- tail(ids[ids < current], 1)
     }
     
     if(length(next_voc) == 1 && !is.na(next_voc)){
-      updateSelectInput(
-        session = session, 
-        inputId = "voc", 
-        selected = next_voc
-      )
+      select_voc(next_voc)
     }
     
   } # End advance function
   
   # ----------------------------------------------------------------------------
-  # Select other species--------------------------------------------------------
-  # ----------------------------------------------------------------------------
-  
-  # Don't offer the species being validated as an "other" species
-  observeEvent(input$species, {
-    # Require species
-    req(input$species)
-    # Update the other species selector 
-    updateSelectizeInput(
-      session = session, 
-      inputId = "other_species",
-      choices = setdiff(c(sp_ls_ssion(), add_sp), input$species)
-    )
-    
-  }) # End other species list
-  
-  # ----------------------------------------------------------------------------
   # Display --------------------------------------------------------------------
   # ----------------------------------------------------------------------------
   
-  # Spectrogram ----
+  # The recording selected in the app (only changes when that row actually changes)
+  observe({
+    sp_dat <- selected_species()
+    vocal <- sp_dat |> filter(Voc.ID == current_voc())
+    if(nrow(vocal) == 1) current_rec(vocal)
+  })
+  
+  # The recording on display. (No debounce needed now: the selection can no longer be 
+  # briefly out of date when the species changes)
+  rec_d <- reactive(current_rec())
+  
+  # The file on display (changes only when the file path changes; used for the audio)
+  current_path <- reactiveVal(NULL)
+  observe({
+    rec <- rec_d()
+    req(rec)
+    current_path(rec$New.File.Path)
+  })
+  
+  # Read the waveform once per file. The last file read is remembered, so re-labeling
+  # the same recording redraws the plot without reading the file again
+  last_wav <- list(path = NULL, wav = NULL)
+  current_wav <- reactive({
+    wav_file <- rec_d()$New.File.Path
+    req(wav_file)
+    if(is.na(wav_file) || !file.exists(wav_file)) return(NULL)
+    if(!identical(wav_file, last_wav$path)){
+      last_wav <<- list(path = wav_file, wav = readWave(wav_file))
+    }
+    last_wav$wav
+  })
   
   # Spectrogram plot render
   output$spectro_plot <- renderPlot({
     
-    # Wait until exactly one snippet is selected
-    vocal <- selected_vocalization()
-    req(nrow(vocal) == 1)
+    # The recording on display and its waveform
+    vocal <- rec_d()
+    req(vocal)
+    wav <- current_wav()
     
-    # Define and check file
-    wav_file <- vocal$New.File.Path
-    if(is.na(wav_file) || !file.exists(wav_file)){
-      plot.new()
-      text(0.5, 0.5, paste("Audio file not found:\n", wav_file), cex = 1.2)
-      return(invisible(NULL))
+    # If the file can't be found, say so on the plot
+    if(is.null(wav)){
+      return(
+        ggplot() +
+          annotate("text", x = 0, y = 0, size = 5,
+                   label = paste("Audio file not found:\n", vocal$New.File.Path)) +
+          theme_void()
+      )
     }
-    
-    # Read and Save
-    wav <- readWave(wav_file)
     
     # Define the confidence score
     conf <- vocal$Confidence
@@ -641,10 +670,13 @@ server <- function(input, output, session) {
     # Define the plot 
     plt_id <- vocal$Plot
     
-    # Check if the species has been confirmed at the plot (uses ALL rows, not 
-    # just the ones in the current validation-status filter)
-    prev_plt_voc_cnt <- valid_ssion() |> 
-      filter(Species == input$species, Plot == plt_id, True.Positive == 1) |> 
+    # Date 
+    date <- ymd(vocal$Date)
+    
+    # Check if the species has been confirmed at the plot. isolate() so this is 
+    # worked out when the recording changes, not after every validation
+    prev_plt_voc_cnt <- isolate(valid_ssion()) |> 
+      filter(Species == vocal$Species, Plot == plt_id, True.Positive == 1) |> 
       nrow()
     
     # Make a title based on whether or not that species has been previously seen
@@ -659,7 +691,7 @@ server <- function(input, output, session) {
     post_status_ttl <- ifelse(
       test = is.na(pos_status),
       yes = "",
-      no = paste0("| Previously Validated: ", ifelse(pos_status == 1, "True", "False"))
+      no = paste0("| Validated: ", ifelse(pos_status == 1, "True", "False"))
     )
     
     # Create the spectrogram
@@ -669,8 +701,8 @@ server <- function(input, output, session) {
       scale = FALSE,
       dB = "max0",
       palette = function(n) hcl.colors(n, "inferno"),
-      collevels = seq(-35, 0, 1),
-      main = paste("Confidence: ", conf, prev_plt_ttl, post_status_ttl),
+      collevels = seq(-75, -10, 1),
+      main = paste("Confidence: ", conf, " | ", date, prev_plt_ttl, post_status_ttl),
       cexlab = 1.3,
       cexaxis = 1.3
     )  # End spectrogram creation
@@ -732,13 +764,19 @@ server <- function(input, output, session) {
     # Plot the logistic regression
     logit_reg_pred |> 
       ggplot() +
-      geom_line(aes(x = Confidence, y = Pred.Val)) +
+      geom_line(aes(x = Confidence, y = Pred.Val),  col = pie_pal[2], linewidth  = 1.5, alpha = 0.6) +
       geom_hline(yintercept = log_reg_prob, linetype = "dashed") +
       labs(
         title = paste0(log_reg_prob*100, "% True Positive Threshold: ", threshold_label),
-        y = "True Positive Probability") +
+        y = "p(True Positive)") +
       scale_y_continuous(limits = c(0, 1)) +
-      theme_classic()
+      theme_classic() +
+      theme(plot.title = element_text(size = 14),
+            legend.text = element_text(size = 12),
+            axis.text = element_text(size = 12),
+            axis.title.x = element_text(size = 12),
+            legend.position = "none",
+            legend.title = element_blank()) 
     
   }) # End logistic regression render
   
@@ -776,23 +814,21 @@ server <- function(input, output, session) {
       theme_void() +
       theme(plot.title = element_text(size = 14),
             legend.text = element_text(size = 12),
-            legend.position = "bottom",
+            legend.position = "right",
             legend.title = element_blank()) 
     
   }) # End pie chart render
   
-  # Audio render from the play button or changing vocalizations
-  observeEvent(c(input$play, input$voc, input$species), {
+  # Audio render from the play button or a new file on display
+  observeEvent(c(input$play, current_path()), {
     
     # Define and check file
-    vocal <- selected_vocalization()
-    req(nrow(vocal) == 1)
-    wav_file <- vocal$New.File.Path
+    wav_file <- current_path()
+    req(wav_file)
     if(is.na(wav_file) || !file.exists(wav_file)) return(NULL)
     
-    # Read and Save (one file per session)
-    wav <- readWave(wav_file)
-    writeWave(wav, audio_path)
+    # Move the audio file
+    file.copy(wav_file, audio_path, overwrite = TRUE)
     
     # Use a cache-buster to track updates to the file
     timestamp <- as.numeric(Sys.time())
@@ -819,30 +855,39 @@ server <- function(input, output, session) {
   # Validation -----------------------------------------------------------------
   # ----------------------------------------------------------------------------
   
-  # Record a true (1) or false (0) positive for the recording being viewed
+  # Record a true (1) or false (0) positive for the recording being viewed and record the other species list
   record_validation <- function(value) {
     
-    req(input$voc)
+    req(current_voc())
     
     # Pull out the current validation
-    dat <- valid_ssion()
+    current_validation <- valid_ssion()
     
     # Only the row being validated
-    row <- dat$Species == input$species & dat$Voc.ID == as.numeric(input$voc)
+    row <- current_validation$Species == input$species & current_validation$Voc.ID == as.numeric(current_voc())
     req(any(row))
     
     # Record the validation, call type, who did it, and when
-    dat$True.Positive[row] <- value
-    dat$Call.Type[row] <- if(value == 1 && length(input$voc_type) > 0) {
+    current_validation$True.Positive[row] <- value
+    current_validation$Call.Type[row] <- if(value == 1 && length(input$voc_type) > 0) {
       paste(input$voc_type, collapse = "; ")
     } else {
       NA_character_
     }
-    dat$Validated.By[row] <- validator()
-    dat$Validated.Time[row] <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    current_validation$Validated.By[row] <- validator()
+    current_validation$Validated.Time[row] <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    
+    # List of other species selected (up to 5, padded with NA)
+    other_sp_ls <- head(input$other_species, 5)
+    other_sp_ls <- c(other_sp_ls, rep(NA_character_, 5 - length(other_sp_ls)))
+    
+    # Assign those to the other species columns
+    for(i in 1:5) {
+      current_validation[[paste0("Other.Sp", i)]][row] <- other_sp_ls[i]
+    }
     
     # Update the data 
-    valid_ssion(dat)
+    valid_ssion(current_validation)
     
     # Trigger autosave 
     perform_auto_save()
@@ -851,6 +896,34 @@ server <- function(input, output, session) {
     advance_after_validation()
     
   } # End record validation
+  
+  
+  # Show the saved other species and call type for the recording being viewed
+  observeEvent(c(input$species, voc_sel()), {
+    
+    req(input$species)
+    vocal <- selected_vocalization()
+    req(nrow(vocal) == 1)
+    
+    # Other species saved for this recording (empty if none)
+    saved <- as.character(unlist(vocal[1, paste0("Other.Sp", 1:5)]))
+    saved <- saved[!is.na(saved)]
+    
+    # Choices (without the species being validated) and the saved selection together
+    updateSelectizeInput(session, "other_species",
+                         choices = sort(setdiff(c(sp_ls_ssion(), add_sp), input$species)),
+                         selected = saved)
+    
+    # Call type saved for this recording (default "Song" if not set yet)
+    ct <- vocal$Call.Type[1]
+    updateSelectizeInput(session, "voc_type",
+                         selected = if(is.na(ct)) "Song" else strsplit(ct, "; ")[[1]])
+    
+  }) # End other species and call type reload
+  
+  # ------------------------------------------------------------------------------
+  # Trigger the true or false positives ------------------------------------------  
+  # ------------------------------------------------------------------------------
   
   # True positive 
   observeEvent(input$true_pos, {
@@ -863,91 +936,35 @@ server <- function(input, output, session) {
   }) # End false positive button
   
   # ----------------------------------------------------------------------------
-  # Assign Other species in the recording to the correct rows ------------------
-  # ----------------------------------------------------------------------------
-  
-  # Notice that other species have been selected
-  observeEvent(input$other_species, {
-    
-    req(input$voc)
-    
-    # Pull out the current validation
-    current_validation <- valid_ssion()
-    
-    # List of other species selected (up to 5, padded with NA)
-    other_sp_ls <- head(input$other_species, 5)
-    other_sp_ls <- c(other_sp_ls, rep(NA_character_, 5 - length(other_sp_ls)))
-    
-    # Only the row being viewed
-    row <- current_validation$Species == input$species & 
-      current_validation$Voc.ID == as.numeric(input$voc)
-    
-    # Skip if there's no matching row, or the box already matches what's saved
-    if(!any(row)) return(NULL)
-    saved <- sapply(1:5, function(i) as.character(current_validation[[paste0("Other.Sp", i)]][row][1]))
-    if(identical(saved, other_sp_ls)) return(NULL)
-    
-    # Assign those to the other species columns
-    for(i in 1:5) {
-      current_validation[[paste0("Other.Sp", i)]][row] <- other_sp_ls[i]
-    }
-    
-    # Update the data
-    valid_ssion(current_validation)
-    
-  }, ignoreNULL = FALSE) # End other species assignment
-  
-  # Show the saved other species and call type for the recording being viewed
-  observeEvent(c(input$species, input$voc), {
-    
-    vocal <- selected_vocalization()
-    req(nrow(vocal) == 1)
-    
-    # Other species saved for this recording (empty if none)
-    saved <- as.character(unlist(vocal[1, paste0("Other.Sp", 1:5)]))
-    saved <- saved[!is.na(saved)]
-    updateSelectizeInput(session, "other_species", selected = saved)
-    
-    # Call type saved for this recording (default "Song" if not set yet)
-    ct <- vocal$Call.Type[1]
-    updateSelectizeInput(session, "voc_type",
-                         selected = if(is.na(ct)) "Song" else strsplit(ct, "; ")[[1]])
-    
-  }) # End other species and call type reload
-  
-  # ----------------------------------------------------------------------------
   # Navigation -----------------------------------------------------------------
   # ----------------------------------------------------------------------------
+  
   
   # Previous
   observeEvent(input$prev_voc, {
     
-    req(input$voc)
+    req(current_voc())
     
     # Closest earlier ID in the current list
     ids <- selected_species() |> pull(Voc.ID)
-    previous_voc <- tail(ids[ids < as.numeric(input$voc)], 1)
+    previous_voc <- tail(ids[ids < as.numeric(current_voc())], 1)
     
     if(length(previous_voc) > 0){
-      updateSelectInput(session,
-                        inputId = "voc",
-                        selected = previous_voc)
+      select_voc(previous_voc)
     } 
   }) # End previous button
   
   # Next 
   observeEvent(input$next_voc, {
     
-    req(input$voc)
+    req(current_voc())
     
     # Closest later ID in the current list
     ids <- selected_species() |> pull(Voc.ID)
-    next_voc <- ids[ids > as.numeric(input$voc)][1]
+    next_voc <- ids[ids > as.numeric(current_voc())][1]
     
     if(!is.na(next_voc)){
-      updateSelectInput(session,
-                        inputId = "voc",
-                        selected = next_voc)
+      select_voc(next_voc)
     } 
   }) # End next button
   

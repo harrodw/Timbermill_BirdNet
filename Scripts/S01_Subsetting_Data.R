@@ -24,9 +24,6 @@ set.seed(27606)
 # Path to wd
 wd <- "/media/will/Timbermill/Bird_Anuran_ARUs"
 
-# Set wd
-setwd(wd)
-
 ################################################################################
 # 2) Inspect data ##############################################################
 ################################################################################
@@ -97,11 +94,8 @@ min_days_dat
 # 3) Subset data ###############################################################
 ################################################################################
 
-# Path to wd
-wd <- "/media/will/Timbermill"
-
-# Set wd
-setwd(wd)
+# Path to output wd
+out_wd <- "/home/will/NCSU/Data"
 
 # Large recordings are over 100 MB
 lrg_fil_sze <-  fs_bytes("100M")
@@ -115,7 +109,7 @@ n_recs <- min_days
 n_recs <- 20
 
 # Create a folder for subsetted data
-out_dir <- "Subsetted_ARU_Data"
+out_dir <- path(out_wd, "Subsetted_ARU_Data")
 dir_create(out_dir, recurse = TRUE)
 
 # How many ARUs?
